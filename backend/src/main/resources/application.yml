@@ -1,0 +1,52 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: deployhub-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/deployhub}
+    username: ${DB_USER:deployhub}
+    password: ${DB_PASSWORD:deployhub}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+deployhub:
+  jwt-secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
+  jwt-ttl-hours: 12
+  cors-origins: ${CORS_ORIGINS:http://localhost:5173}
+
+  github:
+    # Token needs "Actions: read and write" on the DeployHub repo (fine-grained PAT).
+    token: ${GITHUB_TOKEN:}
+    owner: ${GITHUB_OWNER:}
+    repo: ${GITHUB_REPO:deployhub}
+    workflow-file: build-user-app.yml
+    workflow-ref: ${GITHUB_WORKFLOW_REF:main}
+    # All user apps go into one GHCR package with per-app tags.
+    image-repository: ${IMAGE_REPOSITORY:deployhub-apps}
+
+  kubernetes:
+    namespace: ${APPS_NAMESPACE:apps}
+    # Leave empty if the GHCR package is public.
+    pull-secret: ${PULL_SECRET:ghcr-pull}
+    # Linux + minikube IP: <minikube ip>.nip.io   |   macOS/Windows + `minikube tunnel`: 127.0.0.1.nip.io
+    app-domain: ${APP_DOMAIN:127.0.0.1.nip.io}
+    ingress-class: nginx
+    max-replicas: 5
+
+  prometheus:
+    url: ${PROMETHEUS_URL:http://localhost:9090}
+
+  grafana:
+    url: ${GRAFANA_URL:http://localhost:3000}

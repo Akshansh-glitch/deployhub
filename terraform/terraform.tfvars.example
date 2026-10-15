@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+kube_context = "minikube"
+
+# Only needed if your GHCR package "deployhub-apps" is private.
+# Token: classic PAT with the read:packages scope.
+ghcr_username = "your-github-username"
+ghcr_token    = ""
+
+grafana_admin_password = "deployhub"

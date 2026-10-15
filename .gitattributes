@@ -1,0 +1,3 @@
+# Keep LF for files that run in bash or Linux containers, even when cloned on Windows.
+*.sh        text eol=lf
+*Dockerfile text eol=lf

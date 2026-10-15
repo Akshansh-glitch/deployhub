@@ -1,0 +1,113 @@
+# Pipeline #2: CI/CD for DeployHub's OWN code (backend, frontend, infrastructure).
+name: platform-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - run: mvn -B verify
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  sample-apps:
+    name: Sample app tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: bash builder/run-tests.sh springboot sample-apps/hello-spring
+      - run: bash builder/run-tests.sh node sample-apps/hello-node
+      - run: bash builder/run-tests.sh flask sample-apps/hello-flask
+
+  infrastructure:
+    name: Terraform and manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform format
+        run: terraform -chdir=terraform fmt -check -recursive
+      - name: Terraform validate
+        run: |
+          terraform -chdir=terraform init -backend=false -input=false
+          terraform -chdir=terraform validate
+      - name: Validate Kubernetes manifests
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          ./kubeconform -strict -summary -ignore-filename-pattern 'secrets' k8s/platform
+
+  images:
+    name: Build platform images
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image names
+        id: names
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      # Pull requests only check that the images build; pushes to main also publish them.
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/${{ steps.names.outputs.owner }}/deployhub-backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/${{ steps.names.outputs.owner }}/deployhub-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend

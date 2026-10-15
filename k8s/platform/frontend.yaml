@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployhub-frontend
+  namespace: deployhub-system
+  labels:
+    app: deployhub-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deployhub-frontend
+  template:
+    metadata:
+      labels:
+        app: deployhub-frontend
+    spec:
+      containers:
+        - name: frontend
+          # `minikube image build -t deployhub-frontend:local frontend`
+          image: deployhub-frontend:local
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployhub-frontend
+  namespace: deployhub-system
+spec:
+  selector:
+    app: deployhub-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Open http://deployhub.<APP_DOMAIN>, e.g. http://deployhub.127.0.0.1.nip.io
+# Edit the host to match your APP_DOMAIN before applying.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: deployhub
+  namespace: deployhub-system
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: deployhub.127.0.0.1.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: deployhub-frontend
+                port:
+                  number: 80

@@ -1,0 +1,22 @@
+# secrets
+backend/.env
+terraform/terraform.tfvars
+k8s/platform/secrets.yaml
+
+# build output
+backend/target/
+frontend/node_modules/
+frontend/dist/
+sample-apps/**/target/
+sample-apps/**/node_modules/
+__pycache__/
+.pytest_cache/
+
+# terraform state (local only for this project)
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+
+.DS_Store
+.idea/
+.vscode/

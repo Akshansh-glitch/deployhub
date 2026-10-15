@@ -1,0 +1,154 @@
+# Pipeline #1: builds a USER'S app on request from the DeployHub backend.
+# Triggered via the GitHub API (workflow_dispatch). You can also run it by hand from the Actions tab.
+name: build-user-app
+
+# The backend finds this run by its name, so keep this format in sync with GitHubActionsClient.runName().
+run-name: deploy-${{ inputs.deployment_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: DeployHub deployment id
+        required: true
+        type: string
+      repo_url:
+        description: Public GitHub repo, e.g. https://github.com/user/app
+        required: true
+        type: string
+      ref:
+        description: Branch to build
+        required: true
+        default: main
+        type: string
+      app_path:
+        description: Folder inside the repo that contains the app (empty = repo root)
+        required: false
+        default: ""
+        type: string
+      runtime:
+        description: Runtime template
+        required: true
+        type: choice
+        options: [springboot, node, flask]
+      image:
+        description: Full image reference to push, e.g. ghcr.io/owner/deployhub-apps:hello-d1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Inputs reach the shell only through env vars, never via ${{ }} inside run: (prevents script injection).
+    env:
+      REPO_URL: ${{ inputs.repo_url }}
+      REF: ${{ inputs.ref }}
+      APP_PATH: ${{ inputs.app_path }}
+      RUNTIME: ${{ inputs.runtime }}
+      IMAGE: ${{ inputs.image }}
+    steps:
+      - name: Check out DeployHub (for the Dockerfile templates)
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          [[ "$REPO_URL" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+            || { echo "::error::repo_url must look like https://github.com/user/repo"; exit 1; }
+          [[ "$REF" =~ ^[A-Za-z0-9._/-]{1,100}$ ]] || { echo "::error::invalid branch name"; exit 1; }
+          [[ "$APP_PATH" =~ ^[A-Za-z0-9._/-]*$ && "$APP_PATH" != *..* ]] || { echo "::error::invalid app_path"; exit 1; }
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          [[ "$IMAGE" == "ghcr.io/$owner/"* ]] || { echo "::error::image must be under ghcr.io/$owner/"; exit 1; }
+
+      - name: Clone application
+        run: git clone --depth 1 --branch "$REF" "$REPO_URL" app
+
+      - name: Prepare build context
+        id: ctx
+        run: |
+          set -euo pipefail
+          dir="app"
+          [ -n "$APP_PATH" ] && dir="app/$APP_PATH"
+          [ -d "$dir" ] || { echo "::error::Folder '$APP_PATH' not found in the repository"; exit 1; }
+          if [ -f "$dir/Dockerfile" ]; then
+            echo "Using the repository's own Dockerfile"
+          else
+            cp "builder/templates/$RUNTIME.Dockerfile" "$dir/Dockerfile"
+            echo "Using the DeployHub $RUNTIME template"
+          fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git -C app rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        if: inputs.runtime == 'springboot'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Cache Maven packages
+        if: inputs.runtime == 'springboot'
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: m2-${{ hashFiles('app/**/pom.xml') }}
+          restore-keys: m2-
+
+      - name: Set up Node.js
+        if: inputs.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        if: inputs.runtime == 'flask'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run tests
+        env:
+          CTX: ${{ steps.ctx.outputs.dir }}
+        run: bash builder/run-tests.sh "$RUNTIME" "$CTX"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.ctx.outputs.dir }}
+          push: true
+          tags: ${{ inputs.image }}
+          labels: |
+            org.opencontainers.image.source=${{ inputs.repo_url }}
+            org.opencontainers.image.revision=${{ steps.ctx.outputs.sha }}
+            io.deployhub.deployment-id=${{ inputs.deployment_id }}
+          cache-from: type=gha,scope=${{ inputs.runtime }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.runtime }}
+
+      - name: Summary
+        env:
+          SHA: ${{ steps.ctx.outputs.sha }}
+        run: |
+          {
+            echo "### Image pushed"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image | \`$IMAGE\` |"
+            echo "| Source | $REPO_URL @ $REF ($SHA) |"
+            echo "| Runtime | $RUNTIME |"
+          } >> "$GITHUB_STEP_SUMMARY"
