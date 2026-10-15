@@ -11,7 +11,7 @@ import java.util.Map;
 public class HelloController {
 
     /** Change this and redeploy to demonstrate a rolling update. */
-    static final String VERSION = "v1";
+    static final String VERSION = "v2";
 
     @GetMapping("/")
     public Map<String, String> hello() throws Exception {
