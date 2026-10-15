@@ -12,6 +12,8 @@ WORKDIR /app
 RUN useradd -r -u 1001 app
 COPY --from=build /app.jar app.jar
 USER 1001
-ENV SERVER_PORT=8080
 EXPOSE 8080
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]
+# DeployHub injects PORT (the port the user registered). A -D system property beats
+# application.properties, so the app listens there even if it never reads PORT itself.
+# sh -c expands the variable; exec keeps java as PID 1 so it receives SIGTERM.
+ENTRYPOINT ["sh", "-c", "exec java -XX:MaxRAMPercentage=75 -Dserver.port=${PORT:-8080} -jar app.jar"]
