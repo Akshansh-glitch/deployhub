@@ -187,14 +187,18 @@ What has been checked:
 - `k8s/platform` passes `kubeconform`.
 - All Java files parse.
 
-Still to verify on a real machine (see `CLAUDE.md`):
+- `mvn verify` for the backend and the Spring sample, `terraform validate`, and all `platform-ci` jobs.
+- A full run of the demo script on Windows 11 + Minikube 1.39 (Kubernetes 1.37): deploy, scale, self-healing,
+  rolling update, rollback, `terraform plan` with no changes, and data in every Grafana panel.
+- The fabric8 server-side apply (field manager `fabric8`), the run lookup by `display_title`, and the service names
+  `kps-prometheus` and `kps-grafana`.
+- A package pushed from a public repo was pullable without a pull secret straight after the first build.
 
-- `mvn verify` for the backend and the Spring sample.
-- `terraform validate`.
-- A first end-to-end deploy.
+Things learned during that run:
 
-Items to confirm during that run, not assume:
-
-- The fabric8 server-side-apply call chain in `KubernetesService.apply`.
-- That the GitHub runs API exposes `run-name` as `display_title`.
-- The service names `kps-prometheus` and `kps-grafana` created by the Helm chart.
+- Start the backend **after** `scripts/setup-cluster.sh`. The Kubernetes client reads `~/.kube/config` once at startup;
+  without it, deploys fail with `UnknownHostException: kubernetes.default.svc`.
+- On a slow connection, `minikube addons enable ingress` can time out while the image is still downloading.
+  Wait until `kubectl -n ingress-nginx get pods` shows the controller running, then run the setup script again.
+- Pods get a 10 s `preStop` sleep. Without it, the ingress sent a request or two to each pod that was shutting down
+  and the curl loop showed failures during a rolling update.

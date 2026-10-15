@@ -7,7 +7,11 @@ deployment state machine and setup. Keep the scope small: this is a student proj
 
 All code was written in a sandbox that could not download Maven dependencies or Terraform providers and had no cluster.
 Verified there: frontend build + UI screenshots against a mock API, Node/Flask sample tests, actionlint on both workflows,
-kubeconform on k8s/platform, Java syntax. **Not yet compiled or run end-to-end.**
+kubeconform on k8s/platform, Java syntax.
+
+First tasks 1–5 below are done (2026-10-15): both Maven builds and Terraform pass, and the README demo script ran
+end to end on Minikube. The only code fix needed was a `preStop` sleep in `ManifestFactory` for zero-downtime
+rollouts. See README "Verification status" for details.
 
 ## First tasks, in order
 
@@ -37,7 +41,8 @@ kubeconform on k8s/platform, Java syntax. **Not yet compiled or run end-to-end.*
 - Image names come from `ImageNames.forDeployment()`; GHCR owner must be lowercase.
 - Every k8s object for an app is named after the app and carries labels `app=<name>` and `deployhub.io/runtime=<runtime>`.
   The Service port must be named `http` (Prometheus ServiceMonitor in terraform/monitoring.tf relies on it).
-- The Deployment strategy stays `maxSurge: 1, maxUnavailable: 0` (the zero-downtime demo depends on it).
+- The Deployment strategy stays `maxSurge: 1, maxUnavailable: 0`, and containers keep the `preStop` sleep
+  (the zero-downtime demo depends on both).
 - The backend only touches the `apps` namespace (Terraform RBAC in terraform/rbac.tf enforces this in-cluster).
 - API errors are always `{"error": "message"}` (GlobalExceptionHandler); the frontend shows them verbatim.
 - DB schema changes go in a new Flyway migration (`V2__...sql`), never by editing V1.

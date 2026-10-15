@@ -21,6 +21,8 @@ public class ManifestFactory {
 
     public static final String APP_LABEL = "app";
     public static final String RUNTIME_LABEL = "deployhub.io/runtime";
+    /** Well under the default 30 s termination grace period. */
+    static final long PRE_STOP_SLEEP_SECONDS = 10;
 
     private final DeployHubProperties.Kubernetes cfg;
 
@@ -89,6 +91,11 @@ public class ManifestFactory {
                                 .withStartupProbe(probe(app, 5, 30))
                                 .withReadinessProbe(probe(app, 5, 3))
                                 .withLivenessProbe(probe(app, 10, 3))
+                                // keep serving while the ingress drops this pod from its endpoints,
+                                // otherwise a rolling update loses the requests that race the shutdown
+                                .withNewLifecycle()
+                                    .withNewPreStop().withNewSleep(PRE_STOP_SLEEP_SECONDS).endPreStop()
+                                .endLifecycle()
                             .endContainer()
                         .endSpec()
                     .endTemplate()

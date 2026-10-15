@@ -52,6 +52,12 @@ class ManifestFactoryTest {
     }
 
     @Test
+    void containerDrainsBeforeShutdown() {
+        Container c = factory("").deployment(app(null), "img:1").getSpec().getTemplate().getSpec().getContainers().get(0);
+        assertThat(c.getLifecycle().getPreStop().getSleep().getSeconds()).isEqualTo(10L);
+    }
+
+    @Test
     void healthPathSwitchesToHttpProbe() {
         Container c = factory("").deployment(app("/actuator/health"), "img:1")
                 .getSpec().getTemplate().getSpec().getContainers().get(0);
